@@ -5,6 +5,8 @@ const path = require("path");
 const hbs = require("hbs");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
+const auth = require("./middleware/auth");
 
 require("./db/conn");
 const Register = require("./models/registers");
@@ -19,6 +21,8 @@ app.use(express.json());
 //for reading form data
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(static_path));
+app.use(cookieParser());
+
 app.set("view engine", "hbs");
 app.set("views", templete_path);
 hbs.registerPartials(partials_path);
@@ -26,6 +30,33 @@ hbs.registerPartials(partials_path);
 app.get("/", async (req, res) => {
   try {
     res.status(200).render("index");
+  } catch (error) {
+    res.status(500).send();
+  }
+});
+
+app.get("/secret", auth, async (req, res) => {
+  try {
+    console.log(`this is the cookies : ${req.cookies.jwt}`);
+    res.status(200).render("secret");
+  } catch (error) {
+    res.status(500).send();
+  }
+});
+
+app.get("/logout", auth, async (req, res) => {
+  try {
+    //for single logout
+    // req.user.tokens = req.user.tokens.filters((currElement) => {
+    //   return currElement.token != req.token;
+    // });
+
+    //logout from all devices
+    req.user.tokens = [];
+    res.clearCookie("jwt");
+    await req.user.save();
+    console.log("logout successfully");
+    res.status(200).render("login");
   } catch (error) {
     res.status(500).send();
   }
@@ -58,8 +89,17 @@ app.post("/register", async (req, res) => {
       });
 
       //this is concept of middleware
-      console.log("the success part" + registerEmployee);
       const token = await registerEmployee.generateAuthToken();
+
+      res.cookie("jwt", token, {
+        //if you want to expire cookies
+        expires: new Date(Date.now() + 30000),
+        //client not able to overwrite my cookies
+        httpOnly: true,
+        //this property run only in secure connection like https:
+        //secure:true
+      });
+
       const registeredData = await registerEmployee.save();
       res.status(201).render("home");
     } else {
@@ -85,7 +125,15 @@ app.post("/login", async (req, res) => {
     const useremail = await Register.findOne({ email: email });
     const isMatch = await bcrypt.compare(password, useremail.password);
     const token = await useremail.generateAuthToken();
-    console.log(token);
+
+    res.cookie("jwt", token, {
+      expires: new Date(Date.now() + 600000),
+      //client not able to overwrite my cookies
+      httpOnly: true,
+      //this property run only in secure connection like https:
+      //secure:true
+    });
+
     if (isMatch) {
       res.status(201).render("home");
     } else {
